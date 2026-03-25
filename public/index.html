@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>⚽ Football Auction Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#080b10;--surface:#0f1318;--card:#161b24;--border:#1e2535;
+  --accent:#00e676;--gold:#ffd700;--red:#ff4757;--blue:#00b4ff;
+  --text:#e8eaf0;--muted:#5a6478;
+  --font-h:'Bebas Neue',sans-serif;--font-b:'Inter',sans-serif;
+  --r:14px;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font-b);overflow-x:hidden}
+
+/* Subtle grid bg */
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:linear-gradient(rgba(255,255,255,.015) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.015) 1px,transparent 1px);
+  background-size:40px 40px;pointer-events:none;z-index:0;
+}
+
+/* ── JOIN ────────────────────────────────────────────────────────── */
+#join-screen{
+  position:relative;z-index:1;min-height:100vh;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;
+}
+.logo{font-family:var(--font-h);font-size:clamp(60px,15vw,110px);color:var(--accent);
+  text-shadow:0 0 40px rgba(0,230,118,.4);line-height:1;text-align:center;letter-spacing:2px}
+.logo-sub{font-size:12px;letter-spacing:4px;text-transform:uppercase;color:var(--muted);margin-top:6px;text-align:center}
+.league-badges{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap;justify-content:center}
+.badge{background:var(--card);border:1px solid var(--border);border-radius:999px;
+  padding:5px 12px;font-size:12px;letter-spacing:1px;color:var(--muted)}
+.join-box{background:var(--card);border:1px solid var(--border);border-radius:20px;
+  padding:32px;width:100%;max-width:380px;margin-top:32px;box-shadow:0 12px 50px rgba(0,0,0,.7)}
+.join-box label{display:block;font-size:11px;font-weight:600;letter-spacing:2.5px;
+  text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.join-box input{width:100%;background:var(--surface);border:1.5px solid var(--border);
+  border-radius:var(--r);color:var(--text);font-family:var(--font-b);font-size:18px;
+  padding:13px 15px;outline:none;transition:border-color .2s,box-shadow .2s}
+.join-box input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,230,118,.1)}
+.btn-join{margin-top:16px;width:100%;background:var(--accent);color:#000;border:none;
+  border-radius:var(--r);font-family:var(--font-h);font-size:22px;letter-spacing:1px;
+  padding:15px;cursor:pointer;transition:transform .15s,box-shadow .15s}
+.btn-join:hover{transform:translateY(-2px);box-shadow:0 0 28px rgba(0,230,118,.35)}
+.btn-join:active{transform:scale(.98)}
+
+/* ── AUCTION ─────────────────────────────────────────────────────── */
+#auction-screen{display:none;position:relative;z-index:1;
+  min-height:100vh;max-width:720px;margin:0 auto;padding:14px 16px 40px}
+
+.top-bar{display:flex;justify-content:space-between;align-items:center;
+  padding-bottom:14px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.top-title{font-family:var(--font-h);font-size:26px;color:var(--accent);letter-spacing:1px}
+.top-right{display:flex;gap:8px;align-items:center}
+.online-pill{background:var(--card);border:1px solid var(--border);border-radius:999px;
+  padding:5px 12px;font-size:12px;color:var(--muted)}
+.online-pill span{color:var(--accent);font-weight:700}
+.my-name-pill{background:var(--card);border:1px solid var(--border);border-radius:999px;
+  padding:5px 12px;font-size:12px;color:var(--muted)}
+.my-name-pill b{color:#fff}
+
+/* ── PLAYER CARD ─────────────────────────────────────────────────── */
+.player-card{background:var(--card);border:1px solid var(--border);border-radius:20px;
+  padding:24px 20px;text-align:center;position:relative;overflow:hidden;
+  transition:box-shadow .3s}
+.player-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,var(--accent),var(--gold),var(--blue));opacity:.6}
+.player-flag{font-size:42px;line-height:1;margin-bottom:10px;display:block;
+  animation:popIn .35s cubic-bezier(.34,1.56,.64,1)}
+.player-name{font-family:var(--font-h);font-size:clamp(32px,8vw,54px);color:#fff;
+  letter-spacing:1px;line-height:1.05}
+.player-meta{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.player-club{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--muted)}
+.player-league{background:var(--surface);border:1px solid var(--border);border-radius:999px;
+  padding:3px 10px;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--blue)}
+.player-pos{background:var(--surface);border:1px solid var(--border);border-radius:999px;
+  padding:3px 10px;font-size:11px;letter-spacing:1.5px;color:var(--gold)}
+
+.waiting-msg{padding:36px 10px;color:var(--muted);text-align:center}
+.waiting-msg .ico{font-size:38px;display:block;margin-bottom:10px}
+
+/* ── TIMER ───────────────────────────────────────────────────────── */
+.timer-wrap{display:flex;justify-content:center;margin:14px 0 6px}
+.timer-ring{position:relative;width:70px;height:70px}
+.timer-ring svg{transform:rotate(-90deg)}
+.ring-bg{fill:none;stroke:var(--border);stroke-width:5}
+.ring-fill{fill:none;stroke:var(--accent);stroke-width:5;stroke-linecap:round;
+  stroke-dasharray:188;stroke-dashoffset:0;transition:stroke-dashoffset .9s linear,stroke .3s}
+.ring-fill.warn{stroke:var(--red)}
+.timer-num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-h);font-size:26px;color:var(--text)}
+.timer-num.warn{color:var(--red)}
+
+/* ── BID DISPLAY ─────────────────────────────────────────────────── */
+.bid-row{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  padding:14px 18px;display:flex;justify-content:space-between;align-items:center;
+  margin:10px 0;gap:8px}
+.bid-left .lbl,.bid-right .lbl{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
+.bid-amount{font-family:var(--font-h);font-size:38px;color:var(--gold);line-height:1}
+.bid-bidder{font-size:15px;font-weight:600;color:var(--text);text-align:right;max-width:150px;word-break:break-word}
+.bid-bidder.empty{color:var(--muted);font-style:italic;font-weight:400}
+.bid-row.flash{animation:rowFlash .3s ease}
+
+/* ── BID FORM ────────────────────────────────────────────────────── */
+.bid-form{display:flex;gap:10px;margin-top:10px}
+.bid-form input{flex:1;background:var(--surface);border:1.5px solid var(--border);
+  border-radius:var(--r);color:var(--text);font-family:var(--font-b);font-size:17px;
+  padding:12px 14px;outline:none;transition:border-color .2s;min-width:0}
+.bid-form input:focus{border-color:var(--gold)}
+.bid-form input::placeholder{color:var(--muted)}
+.btn-bid{background:var(--gold);color:#000;border:none;border-radius:var(--r);
+  font-family:var(--font-h);font-size:18px;letter-spacing:1px;padding:12px 20px;
+  cursor:pointer;white-space:nowrap;transition:transform .15s,box-shadow .15s}
+.btn-bid:hover{transform:translateY(-2px);box-shadow:0 0 22px rgba(255,215,0,.3)}
+.btn-bid:active{transform:scale(.97)}
+.btn-bid:disabled{opacity:.3;cursor:not-allowed;transform:none;box-shadow:none}
+.bid-err{color:var(--red);font-size:12px;text-align:center;min-height:18px;margin-top:6px}
+
+/* ── SECTION LABEL ───────────────────────────────────────────────── */
+.sec-label{font-size:10px;font-weight:600;letter-spacing:3px;text-transform:uppercase;
+  color:var(--muted);margin:22px 0 8px}
+
+/* ── LIVE FEED ───────────────────────────────────────────────────── */
+#feed{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  max-height:120px;overflow-y:auto;font-size:13px}
+.feed-item{padding:7px 14px;border-bottom:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:center;gap:8px;
+  animation:slideIn .2s ease}
+.feed-item:last-child{border-bottom:none}
+.feed-name{color:var(--accent);font-weight:600}
+.feed-amt{font-family:var(--font-h);font-size:16px;color:var(--gold)}
+.feed-sys{color:var(--muted);font-style:italic;flex:1}
+
+/* ── SOLD LIST ───────────────────────────────────────────────────── */
+#sold-list{display:flex;flex-direction:column;gap:8px;padding-bottom:20px}
+.sold-item{background:var(--card);border:1px solid var(--border);border-radius:var(--r);
+  padding:11px 15px;display:flex;align-items:center;gap:12px;animation:slideIn .3s ease}
+.sold-flag{font-size:26px;flex-shrink:0}
+.sold-info{flex:1;min-width:0}
+.sold-player{font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sold-sub{display:flex;gap:6px;margin-top:2px;flex-wrap:wrap}
+.sold-club{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.sold-league-tag{font-size:10px;color:var(--blue);background:rgba(0,180,255,.08);
+  border:1px solid rgba(0,180,255,.2);border-radius:999px;padding:1px 7px}
+.sold-right{text-align:right;flex-shrink:0}
+.sold-winner{font-size:12px;color:var(--accent);font-weight:600}
+.sold-price{font-family:var(--font-h);font-size:22px;color:var(--gold);line-height:1.1}
+.sold-item.nobody .sold-winner,.sold-item.nobody .sold-price{color:var(--muted)}
+.no-sold{text-align:center;color:var(--muted);padding:30px 10px}
+.no-sold .ico{font-size:32px;display:block;margin-bottom:8px}
+
+/* ── SOLD OVERLAY ────────────────────────────────────────────────── */
+#sold-overlay{display:none;position:fixed;inset:0;z-index:200;
+  background:rgba(0,0,0,.85);backdrop-filter:blur(8px);
+  align-items:center;justify-content:center;flex-direction:column;
+  text-align:center;padding:24px;animation:fadeIn .2s ease}
+#sold-overlay.show{display:flex}
+.ov-hammer{font-size:64px;animation:swing .5s ease infinite alternate}
+.ov-sold{font-family:var(--font-h);font-size:clamp(60px,16vw,100px);
+  color:var(--gold);text-shadow:0 0 40px rgba(255,215,0,.5);line-height:1;letter-spacing:3px}
+.ov-player{font-family:var(--font-h);font-size:clamp(24px,7vw,42px);color:#fff;margin-top:4px}
+.ov-detail{font-size:16px;color:var(--muted);margin-top:6px}
+.ov-detail b{color:var(--accent)}
+.ov-amount{font-family:var(--font-h);font-size:clamp(38px,10vw,66px);color:var(--gold)}
+
+/* ── ANIMATIONS ──────────────────────────────────────────────────── */
+@keyframes popIn  {from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+@keyframes slideIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+@keyframes fadeIn {from{opacity:0}to{opacity:1}}
+@keyframes swing  {from{transform:rotate(-12deg)}to{transform:rotate(12deg)}}
+@keyframes rowFlash{0%,100%{background:var(--surface)}50%{background:#1a2a10}}
+@keyframes soldPulse{0%{box-shadow:0 0 0 0 rgba(255,215,0,.5)}100%{box-shadow:0 0 0 18px rgba(255,215,0,0)}}
+
+/* ── SCROLLBAR ───────────────────────────────────────────────────── */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+</style>
+</head>
+<body>
+
+<!-- ═══════════ JOIN ═══════════ -->
+<div id="join-screen">
+  <div class="logo">⚽ AUCTION</div>
+  <div class="logo-sub">Live Football Player Bidding</div>
+  <div class="league-badges">
+    <span class="badge">🏴󠁧󠁢󠁥󠁮󠁧󠁿 Premier League</span>
+    <span class="badge">🇪🇸 La Liga</span>
+    <span class="badge">🇩🇪 Bundesliga</span>
+    <span class="badge">🇮🇹 Serie A</span>
+    <span class="badge">🇫🇷 Ligue 1</span>
+  </div>
+  <div class="join-box">
+    <label for="name-in">Your Name</label>
+    <input id="name-in" type="text" maxlength="20" placeholder="Enter your name..." autocomplete="off"/>
+    <button class="btn-join" onclick="doJoin()">JOIN AUCTION →</button>
+  </div>
+</div>
+
+<!-- ═══════════ AUCTION ═══════════ -->
+<div id="auction-screen">
+
+  <!-- Top bar -->
+  <div class="top-bar">
+    <div class="top-title">⚽ LIVE AUCTION</div>
+    <div class="top-right">
+      <div class="online-pill">🟢 <span id="online-count">0</span> online</div>
+      <div class="my-name-pill">👤 <b id="my-name"></b></div>
+    </div>
+  </div>
+
+  <!-- Player card -->
+  <div class="player-card" id="player-card">
+    <div class="waiting-msg">
+      <span class="ico">⏳</span>Waiting for auction to start...
+    </div>
+  </div>
+
+  <!-- Timer -->
+  <div class="timer-wrap">
+    <div class="timer-ring">
+      <svg width="70" height="70" viewBox="0 0 70 70">
+        <circle class="ring-bg" cx="35" cy="35" r="30"/>
+        <circle class="ring-fill" cx="35" cy="35" r="30" id="ring"/>
+      </svg>
+      <div class="timer-num" id="timer-num">—</div>
+    </div>
+  </div>
+
+  <!-- Bid display -->
+  <div class="bid-row" id="bid-row">
+    <div class="bid-left">
+      <div class="lbl">Current Bid</div>
+      <div class="bid-amount" id="bid-amount">$0M</div>
+    </div>
+    <div class="bid-right">
+      <div class="lbl">Highest Bidder</div>
+      <div class="bid-bidder empty" id="bid-bidder">No bids yet</div>
+    </div>
+  </div>
+
+  <!-- Bid form -->
+  <div class="bid-form">
+    <input id="bid-in" type="number" min="1" placeholder="Amount in $M..." inputmode="numeric"/>
+    <button class="btn-bid" id="btn-bid" onclick="doBid()">BID 💸</button>
+  </div>
+  <div class="bid-err" id="bid-err"></div>
+
+  <!-- Live feed -->
+  <div class="sec-label">📡 Live Feed</div>
+  <div id="feed"><div class="feed-item"><span class="feed-sys">Waiting for bids...</span></div></div>
+
+  <!-- Sold list -->
+  <div class="sec-label">🏆 Sold Players</div>
+  <div id="sold-list">
+    <div class="no-sold"><span class="ico">🏷️</span>No players sold yet!</div>
+  </div>
+
+</div>
+
+<!-- ═══════════ SOLD OVERLAY ═══════════ -->
+<div id="sold-overlay">
+  <div class="ov-hammer">🔨</div>
+  <div class="ov-sold">SOLD!</div>
+  <div class="ov-player" id="ov-player"></div>
+  <div class="ov-detail">Going to <b id="ov-winner"></b></div>
+  <div class="ov-amount" id="ov-amount"></div>
+</div>
+
+<script>
+const socket = io();
+let myName = '';
+let maxTime = 15;
+const CIRC = 188;
+
+// ── JOIN ─────────────────────────────────────────────────────────────────────
+function doJoin() {
+  const inp = document.getElementById('name-in');
+  const n   = inp.value.trim();
+  if (!n) { inp.focus(); inp.style.borderColor='var(--red)'; return; }
+  inp.style.borderColor='';
+  myName = n;
+  socket.emit('join', n);
+}
+document.getElementById('name-in').addEventListener('keydown', e => { if(e.key==='Enter') doJoin(); });
+document.getElementById('bid-in').addEventListener('keydown', e => { if(e.key==='Enter') doBid(); });
+
+socket.on('joined', ({ name }) => {
+  myName = name;
+  document.getElementById('my-name').textContent = name;
+  document.getElementById('join-screen').style.display  = 'none';
+  document.getElementById('auction-screen').style.display = 'block';
+  console.log(`[Joined] as "${name}"`);
+});
+
+// ── STATE SYNC ───────────────────────────────────────────────────────────────
+socket.on('auction_state', ({ player, bid, bidder, timeLeft, soldList, userCount }) => {
+  setOnline(userCount);
+  if (player) renderPlayer(player);
+  renderBid(bid, bidder);
+  renderTimer(timeLeft);
+  if (soldList?.length) renderSoldList(soldList);
+});
+
+// ── NEW PLAYER ───────────────────────────────────────────────────────────────
+socket.on('new_player', (p) => {
+  maxTime = 15;
+  renderPlayer(p);
+  renderBid(0, null);
+  clearErr();
+  document.getElementById('btn-bid').disabled = false;
+  addFeed(`🎯 Now: <span class="feed-name">${esc(p.name)}</span> · ${esc(p.club)}`, 'sys');
+  console.log(`[Player] ${p.name} | ${p.league}`);
+});
+
+// ── BID PLACED ───────────────────────────────────────────────────────────────
+socket.on('bid_placed', ({ bidder, amount, player }) => {
+  renderBid(amount, bidder);
+  maxTime = 5;
+  addFeed(`<span class="feed-name">${esc(bidder)}</span> bid on ${esc(player)}`, 'bid', amount);
+  const row = document.getElementById('bid-row');
+  row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash');
+  console.log(`[Bid] ${bidder} $${amount}M → ${player}`);
+});
+socket.on('bid_error', msg => showErr(msg));
+
+// ── SOLD ─────────────────────────────────────────────────────────────────────
+socket.on('player_sold', r => {
+  showSoldOverlay(r);
+  document.getElementById('btn-bid').disabled = true;
+  addFeed(`🔨 SOLD <span class="feed-name">${esc(r.player)}</span> → <span class="feed-name">${esc(r.winner)}</span>`, 'sys');
+  prependSold(r);
+  console.log(`[Sold] ${r.player} → ${r.winner} $${r.amount}M`);
+});
+
+// ── USER EVENTS ───────────────────────────────────────────────────────────────
+socket.on('user_joined', ({ name, count }) => { setOnline(count); addFeed(`👋 ${esc(name)} joined  (${count} online)`, 'sys'); });
+socket.on('user_left',   ({ name, count }) => { setOnline(count); addFeed(`🚪 ${esc(name)} left  (${count} online)`, 'sys'); });
+socket.on('auction_message', msg => addFeed(`ℹ️ ${msg}`, 'sys'));
+
+// ── BID ──────────────────────────────────────────────────────────────────────
+function doBid() {
+  const inp = document.getElementById('bid-in');
+  const v   = parseInt(inp.value, 10);
+  if (!v || v <= 0) { showErr('Enter a valid amount.'); return; }
+  socket.emit('place_bid', v);
+  inp.value = '';
+  inp.focus();
+  clearErr();
+}
+
+// ── RENDER HELPERS ────────────────────────────────────────────────────────────
+function renderPlayer(p) {
+  document.getElementById('player-card').innerHTML = `
+    <span class="player-flag">${p.flag}</span>
+    <div class="player-name">${esc(p.name)}</div>
+    <div class="player-meta">
+      <span class="player-club">${esc(p.club)}</span>
+      <span class="player-league">${esc(p.league)}</span>
+      <span class="player-pos">${esc(p.position)}</span>
+    </div>`;
+}
+
+function renderBid(bid, bidder) {
+  document.getElementById('bid-amount').textContent = `$${bid||0}M`;
+  const el = document.getElementById('bid-bidder');
+  if (bidder) { el.textContent = bidder; el.className = 'bid-bidder'; }
+  else        { el.textContent = 'No bids yet'; el.className = 'bid-bidder empty'; }
+}
+
+function renderTimer(t) {
+  const num   = document.getElementById('timer-num');
+  const ring  = document.getElementById('ring');
+  const frac  = Math.max(0, Math.min(1, t / maxTime));
+  ring.style.strokeDashoffset = CIRC * (1 - frac);
+  num.textContent  = t > 0 ? t : '—';
+  const warn = t > 0 && t <= 5;
+  ring.classList.toggle('warn', warn);
+  num.classList.toggle('warn', warn);
+}
+
+let overlayTimer;
+function showSoldOverlay({ player, winner, amount, flag }) {
+  document.getElementById('ov-player').textContent  = `${flag} ${player}`;
+  document.getElementById('ov-winner').textContent  = winner;
+  document.getElementById('ov-amount').textContent  = winner === 'Nobody' ? 'UNSOLD' : `$${amount}M`;
+  const ov = document.getElementById('sold-overlay');
+  ov.classList.add('show');
+  clearTimeout(overlayTimer);
+  overlayTimer = setTimeout(() => ov.classList.remove('show'), 2800);
+}
+
+function prependSold({ player, club, league, position, flag, winner, amount }) {
+  document.querySelector('#sold-list .no-sold')?.remove();
+  const nobody = winner === 'Nobody';
+  const el = document.createElement('div');
+  el.className = `sold-item${nobody ? ' nobody' : ''}`;
+  el.innerHTML = `
+    <div class="sold-flag">${flag}</div>
+    <div class="sold-info">
+      <div class="sold-player">${esc(player)}</div>
+      <div class="sold-sub">
+        <span class="sold-club">${esc(club)}</span>
+        <span class="sold-league-tag">${esc(league)}</span>
+      </div>
+    </div>
+    <div class="sold-right">
+      <div class="sold-winner">${nobody ? 'Unsold' : esc(winner)}</div>
+      <div class="sold-price">${nobody ? '—' : `$${amount}M`}</div>
+    </div>`;
+  document.getElementById('sold-list').prepend(el);
+}
+
+function renderSoldList(list) {
+  document
